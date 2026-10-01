@@ -1,0 +1,181 @@
+services:
+
+  # --- MongoDB (necessário para o Orion) ---
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: unless-stopped
+    command: --nojournal
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - fiware
+
+  # --- Orion Context Broker ---
+  orion:
+    image: fiware/orion:3.10.1
+    container_name: orion
+    hostname: orion
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo -logLevel DEBUG -noCache
+    networks:
+      - fiware
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1026/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  # --- QuantumLeap ---
+  quantumleap:
+    image: orchestracities/quantumleap:latest
+    container_name: quantumleap
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      - crate
+      - orion
+    ports:
+      - "8668:8668"
+    environment:
+      - CRATE_HOST=crate
+      - CRATE_PORT=4200
+      - LOGLEVEL=DEBUG
+    networks:
+      - fiware
+
+  # --- CrateDB (bd timeseries) ---
+  crate:
+    image: crate:5.4.5
+    container_name: crate
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+      - "6000:5432"
+    environment:
+      - CRATE_HEAP_SIZE=1g
+    command:
+      - crate
+      - -Cnetwork.host=_site_
+      - -Cdiscovery.type=single-node
+    volumes:
+      - crate_data:/data
+    networks:
+      - fiware
+
+  # --- Grafana ---
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana
+    restart: unless-stopped
+    depends_on:
+      - crate
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - fiware
+
+  # --- Agente IoT ---
+  iot-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: iot-agent
+    restart: unless-stopped
+    depends_on:
+      orion:
+        condition: service_healthy
+    environment:
+      - ORION_HOST=orion
+      - ORION_PORT=1026
+      - MACHINES_FILE=/config/machines.json
+    volumes:
+      - machines_config:/config
+    networks:
+      - fiware
+
+  # --- LSTM ---
+  lstm:
+    build:
+      context: ./lstm
+      dockerfile: Dockerfile
+    container_name: lstm
+    restart: unless-stopped
+    depends_on:
+      - crate
+    environment:
+      - CRATE_HOST=crate:4200
+      - RUN_INTERVAL=300
+      - MACHINES_FILE=/config/machines.json
+    volumes:
+      - machines_config:/config
+    networks:
+      - fiware
+
+  # --- Backend Admin ---
+  backend:
+    build:
+      context: ./admin/backend
+      dockerfile: Dockerfile
+    container_name: backend
+    restart: unless-stopped
+    depends_on:
+      orion:
+        condition: service_started
+    environment:
+      - ORION_HOST=orion
+      - ORION_PORT=1026
+      - MACHINES_FILE=/config/machines.json
+      - DB_FILE=/config/app.db
+      - CRATE_HOST=crate
+    volumes:
+      - machines_config:/config
+    networks:
+      - fiware
+    ports:
+      - "5001:5000"
+
+  # --- Frontend Admin ---
+  frontend:
+    build:
+      context: ./admin/frontend
+      dockerfile: Dockerfile
+    container_name: textile-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3005:3001"
+    environment:
+      - API_URL=http://backend:5000
+      - NEXT_PUBLIC_API_URL=http://localhost:5001
+    volumes:
+      - ./admin/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - fiware
+
+volumes:
+  mongo_data:
+  crate_data:
+  grafana_data:
+  machines_config:
+
+networks:
+  fiware:
+    driver: bridge
