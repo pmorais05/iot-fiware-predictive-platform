@@ -4,6 +4,14 @@ Monitoring and predictive analytics platform for textile machines, built as an a
 
 The platform simulates IoT sensors on textile machines, ingests the data through the **FIWARE** ecosystem, stores it in a time-series database, and uses a **deep learning model (LSTM)** to forecast energy consumption one hour ahead. Everything is exposed through a web dashboard with real-time KPIs, alerts, and forecasts.
 
+## Screenshots
+
+**Dashboard Overview** — real-time KPIs, LSTM forecast and history
+<img width="722" height="379" alt="dashboard-overview" src="https://github.com/user-attachments/assets/792d92ba-02f6-476d-82cf-10e0b688e24e" />
+
+**Machine Management** — per-machine consumption and sensor readings
+<img width="725" height="383" alt="machine-management" src="https://github.com/user-attachments/assets/2827ab78-703a-4c6f-86bc-9882602409f1" />
+
 ## Features
 
 - **Real-time monitoring** of simulated textile machines (energy and raw material consumption)
